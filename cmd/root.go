@@ -42,7 +42,7 @@ func Execute() {
 // The server is shut down when ctx is cancelled.
 func startBaseServer(cfg *config.Config, self protocol.DeviceInfo, cert tls.Certificate, reg *discovery.Registry, filter *whitelist.Filter) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/localsend/v2/info", handlers.InfoHandler(self))
+	mux.HandleFunc("/api/localsend/v2/info", handlers.InfoHandler(self, filter))
 	mux.HandleFunc("/api/localsend/v2/register", discovery.RegisterHandler(reg, self, filter, cfg.Favorites, nil))
 
 	srv := tlsutil.NewServer(fmt.Sprintf(":%d", cfg.Device.Port), mux, cert)

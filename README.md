@@ -11,7 +11,10 @@ go install github.com/deppes/localsend-cli@latest
 Or build from source:
 
 ```sh
+# GitHub
 git clone https://github.com/deppess/localsend-cli
+# Codeberg
+git clone https://codeberg.org/deppes/localsend-cli
 cd localsend-cli
 go build -o localsend-cli .
 ```
@@ -29,6 +32,7 @@ On first run, a config file is created at `~/.config/localsend-cli/config.toml`:
 [receive]
   dir = "~/Downloads"
   prompt_timeout = 30   # seconds to wait before auto-rejecting; 0 = wait forever
+  max_file_mb = 0       # maximum file size in MB; 0 = unlimited
 
 [discovery]
   timeout_ms = 500
@@ -69,6 +73,8 @@ localsend-cli receive --headless
 # photo.jpg
 # document.pdf
 ```
+
+> **Security note:** `--headless` accepts transfers from any device on the network. Enable the whitelist (`whitelist.enabled = true`) when running in untrusted environments.
 
 ### `send`
 
@@ -116,7 +122,7 @@ localsend-cli uses both UDP multicast (`224.0.0.167:53317`) and an HTTP scan loo
 - **HTTP**: proactively POSTs to every host on the local subnet (or only whitelisted IPs) every 2 seconds to register with devices that may have missed the UDP broadcast.
 - **Re-announce**: periodically re-POSTs to all known peers so devices that refresh their list (e.g. the iOS app) continue to see this device.
 
-TLS is self-signed with TOFU (trust on first use). The fingerprint is stored in the config after the first run.
+TLS is self-signed with TOFU (trust on first use). On first contact with a new peer, the fingerprint is printed to the log and saved to `trusted` in the config — verify it out-of-band if the network is untrusted.
 
 ## Yazi plugin
 

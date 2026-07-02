@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -18,6 +17,12 @@ import (
 	"github.com/deppes/localsend-cli/internal/discovery"
 	"github.com/deppes/localsend-cli/internal/protocol"
 	"github.com/deppes/localsend-cli/internal/transfer"
+)
+
+const (
+	maxFilesPerSession = 512
+	maxActiveSessions  = 64
+	oneMB              = 1024 * 1024
 )
 
 var sessionCounter atomic.Int64
@@ -37,6 +42,18 @@ func (h *Handler) PrepareUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Info.Alias == "" || len(req.Files) == 0 {
 		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	if len(req.Files) > maxFilesPerSession {
+		http.Error(w, "too many files", http.StatusBadRequest)
+		return
+	}
+
+	h.mu.Lock()
+	tooMany := len(h.sessions) >= maxActiveSessions
+	h.mu.Unlock()
+	if tooMany {
+		http.Error(w, "too busy", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -157,13 +174,14 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Sanitize fileName to prevent path traversal.
-	fileName = filepath.Base(filepath.Clean(strings.ReplaceAll(fileName, "..", "")))
+	fileName = filepath.Base(fileName)
 	if fileName == "." || fileName == "/" {
 		http.Error(w, "invalid filename", http.StatusBadRequest)
 		return
 	}
 
-	tmpPath := filepath.Join(dir, ".localsend-"+sessionID+"-"+fileName+".tmp")
+	// Include fileID in the tmp name so sessions with duplicate filenames don't collide.
+	tmpPath := filepath.Join(dir, ".localsend-"+sessionID+"-"+fileID+".tmp")
 	destPath := filepath.Join(dir, fileName)
 
 	h.mu.Lock()
@@ -179,11 +197,26 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = transfer.CopyFile(r.Context(), f, r.Body, r.ContentLength, nil, fileName)
+	var body io.Reader = r.Body
+	maxMB := h.cfg.Receive.MaxFileMB
+	if maxMB > 0 {
+		body = io.LimitReader(r.Body, maxMB*oneMB+1)
+	}
+
+	n, err := transfer.CopyFile(r.Context(), f, body, r.ContentLength, nil, fileName)
 	f.Close()
 
+	if err == nil && maxMB > 0 && n > maxMB*oneMB {
+		os.Remove(tmpPath) //nolint:errcheck
+		h.mu.Lock()
+		delete(s.tmpPaths, fileID)
+		h.mu.Unlock()
+		http.Error(w, "file too large", http.StatusRequestEntityTooLarge)
+		return
+	}
+
 	if err != nil {
-		os.Remove(tmpPath)
+		os.Remove(tmpPath) //nolint:errcheck
 		h.mu.Lock()
 		delete(s.tmpPaths, fileID)
 		h.mu.Unlock()
@@ -192,7 +225,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := os.Rename(tmpPath, destPath); err != nil {
-		os.Remove(tmpPath)
+		os.Remove(tmpPath) //nolint:errcheck
 		h.mu.Lock()
 		delete(s.tmpPaths, fileID)
 		h.mu.Unlock()

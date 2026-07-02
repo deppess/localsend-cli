@@ -49,6 +49,7 @@ func NewServer(addr string, handler http.Handler, cert tls.Certificate) *http.Se
 			MinVersion:   tls.VersionTLS12,
 		},
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       90 * time.Second,
 	}
 }
 

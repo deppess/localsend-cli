@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"os"
 	"sync"
 	"time"
 
@@ -76,6 +77,9 @@ func (h *Handler) reapSessions() {
 		h.mu.Lock()
 		for id, s := range h.sessions {
 			if now.After(s.expiry) {
+				for _, p := range s.tmpPaths {
+					os.Remove(p) //nolint:errcheck
+				}
 				delete(h.sessions, id)
 			}
 		}

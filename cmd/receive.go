@@ -47,6 +47,10 @@ func runReceive(_ *cobra.Command, _ []string) error {
 		cfg.Receive.Dir = receiveDir
 	}
 
+	if receiveHeadless && !cfg.Whitelist.Enabled {
+		fmt.Fprintln(os.Stderr, "warning: --headless with whitelist disabled accepts files from any device on the network")
+	}
+
 	filter := whitelist.New(cfg.Whitelist.Enabled, cfg.Whitelist.IPs)
 	reg := discovery.NewRegistry()
 
@@ -63,7 +67,7 @@ func runReceive(_ *cobra.Command, _ []string) error {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/localsend/v2/info", handlers.InfoHandler(self))
+	mux.HandleFunc("/api/localsend/v2/info", handlers.InfoHandler(self, filter))
 	mux.HandleFunc("/api/localsend/v2/register", discovery.RegisterHandler(reg, self, filter, cfg.Favorites, nil))
 	mux.HandleFunc("/api/localsend/v2/prepare-upload", h.PrepareUpload)
 	mux.HandleFunc("/api/localsend/v2/upload", h.Upload)

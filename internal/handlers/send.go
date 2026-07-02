@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -21,11 +22,11 @@ import (
 
 // SendOptions controls a send operation.
 type SendOptions struct {
-	TargetIP  string
-	Paths     []string
-	Self      protocol.DeviceInfo
-	Cfg       *config.Config
-	OnLog     func(string)
+	TargetIP   string
+	Paths      []string
+	Self       protocol.DeviceInfo
+	Cfg        *config.Config
+	OnLog      func(string)
 	OnProgress func(transfer.Progress)
 }
 
@@ -45,7 +46,7 @@ func SendFiles(ctx context.Context, opt SendOptions) error {
 		}
 	}
 
-	client := newSendClient(opt.TargetIP, opt.Cfg)
+	client := newSendClient(opt.TargetIP, opt.Cfg, logf)
 
 	logf(fmt.Sprintf("preparing %d file(s)...", len(files)))
 	resp, err := prepareUpload(ctx, client, opt.TargetIP, opt.Cfg.Device.Port, opt.Self, files)
@@ -89,10 +90,10 @@ func SendFiles(ctx context.Context, opt SendOptions) error {
 }
 
 type fileEntry struct {
-	ID   string
-	Name string
-	Path string
-	Size int64
+	ID     string
+	Name   string
+	Path   string
+	Size   int64
 	SHA256 string
 }
 
@@ -138,9 +139,9 @@ func prepareUpload(ctx context.Context, client *http.Client, ip string, port int
 	}
 
 	body, _ := json.Marshal(protocol.PrepareUploadRequest{Info: self, Files: protoFiles})
-	url := fmt.Sprintf("https://%s:%d/api/localsend/v2/prepare-upload", ip, port)
+	uploadURL := fmt.Sprintf("https://%s:%d/api/localsend/v2/prepare-upload", ip, port)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -179,10 +180,14 @@ func uploadFile(ctx context.Context, client *http.Client, ip string, port int, s
 		pw.CloseWithError(err)
 	}()
 
-	url := fmt.Sprintf("https://%s:%d/api/localsend/v2/upload?sessionId=%s&fileId=%s&token=%s",
-		ip, port, sessionID, f.ID, token)
+	q := url.Values{
+		"sessionId": {sessionID},
+		"fileId":    {f.ID},
+		"token":     {token},
+	}
+	uploadURL := fmt.Sprintf("https://%s:%d/api/localsend/v2/upload?%s", ip, port, q.Encode())
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, pr)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadURL, pr)
 	if err != nil {
 		return err
 	}
@@ -201,10 +206,13 @@ func uploadFile(ctx context.Context, client *http.Client, ip string, port int, s
 	return nil
 }
 
-func newSendClient(peerIP string, cfg *config.Config) *http.Client {
+func newSendClient(peerIP string, cfg *config.Config, logf func(string)) *http.Client {
 	verifyFn := tlsutil.VerifyFunc(peerIP, cfg.Trusted, func(ip, fp string) {
 		cfg.Trusted[ip] = fp
 		config.Save(cfg) //nolint:errcheck
+		if logf != nil {
+			logf(fmt.Sprintf("trusting new peer %s with fingerprint %s (saved to config)", ip, fp))
+		}
 	})
 
 	return &http.Client{

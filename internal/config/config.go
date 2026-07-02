@@ -29,6 +29,7 @@ type DeviceConfig struct {
 type ReceiveConfig struct {
 	Dir           string `toml:"dir"`
 	PromptTimeout int    `toml:"prompt_timeout"` // seconds; 0 = wait forever
+	MaxFileMB     int64  `toml:"max_file_mb"`    // 0 = unlimited
 }
 
 type DiscoveryConfig struct {
