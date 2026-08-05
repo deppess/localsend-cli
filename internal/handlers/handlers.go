@@ -38,14 +38,20 @@ type Notifier interface {
 	Incoming(ctx context.Context, t IncomingTransfer) bool
 }
 
+const (
+	prepareUploadRateLimit  = 5                // requests
+	prepareUploadRateWindow = 10 * time.Second // sliding window, per source IP
+)
+
 // Handler holds shared state for all HTTP handlers.
 type Handler struct {
 	cfg      *config.Config
 	filter   *whitelist.Filter
 	notifier Notifier
 
-	mu       sync.Mutex
-	sessions map[string]*session
+	mu            sync.Mutex
+	sessions      map[string]*session
+	prepareCounts map[string][]time.Time // ip -> recent prepare-upload timestamps
 }
 
 type session struct {
@@ -62,10 +68,11 @@ type session struct {
 // New creates a Handler.
 func New(cfg *config.Config, filter *whitelist.Filter, notifier Notifier) *Handler {
 	h := &Handler{
-		cfg:      cfg,
-		filter:   filter,
-		notifier: notifier,
-		sessions: make(map[string]*session),
+		cfg:           cfg,
+		filter:        filter,
+		notifier:      notifier,
+		sessions:      make(map[string]*session),
+		prepareCounts: make(map[string][]time.Time),
 	}
 	go h.reapSessions()
 	return h
@@ -83,8 +90,43 @@ func (h *Handler) reapSessions() {
 				delete(h.sessions, id)
 			}
 		}
+		cutoff := now.Add(-prepareUploadRateWindow)
+		for ip, times := range h.prepareCounts {
+			kept := pruneOld(times, cutoff)
+			if len(kept) == 0 {
+				delete(h.prepareCounts, ip)
+			} else {
+				h.prepareCounts[ip] = kept
+			}
+		}
 		h.mu.Unlock()
 	}
+}
+
+// allowPrepare enforces a per-IP sliding-window rate limit on
+// prepare-upload, to prevent a LAN peer from flooding the accept-prompt/
+// notification UI faster than a human can dismiss it.
+func (h *Handler) allowPrepare(ip string) bool {
+	now := time.Now()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	kept := pruneOld(h.prepareCounts[ip], now.Add(-prepareUploadRateWindow))
+	if len(kept) >= prepareUploadRateLimit {
+		h.prepareCounts[ip] = kept
+		return false
+	}
+	h.prepareCounts[ip] = append(kept, now)
+	return true
+}
+
+func pruneOld(times []time.Time, cutoff time.Time) []time.Time {
+	kept := times[:0]
+	for _, t := range times {
+		if t.After(cutoff) {
+			kept = append(kept, t)
+		}
+	}
+	return kept
 }
 
 func (h *Handler) storeSession(id string, s *session) {

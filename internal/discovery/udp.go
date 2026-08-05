@@ -7,12 +7,16 @@ import (
 	"time"
 
 	"github.com/deppes/localsend-cli/internal/protocol"
+	"github.com/deppes/localsend-cli/internal/whitelist"
 )
 
 // ListenUDP listens for UDP multicast announcements.
 // When a peer announces with announce:true, we respond via HTTP POST to their
-// /register endpoint so they can discover us.
-func ListenUDP(ctx context.Context, reg *Registry, self protocol.DeviceInfo, favorites map[string]string, onDevice func(protocol.DiscoveredDevice)) error {
+// /register endpoint so they can discover us. filter gates both the response
+// and the registry insertion, mirroring RegisterHandler's HTTP-layer
+// enforcement — when whitelist mode is enabled, announcements from
+// non-whitelisted IPs are ignored entirely.
+func ListenUDP(ctx context.Context, reg *Registry, self protocol.DeviceInfo, filter *whitelist.Filter, favorites map[string]string, onDevice func(protocol.DiscoveredDevice)) error {
 	addr := &net.UDPAddr{
 		IP:   net.ParseIP(MulticastAddr),
 		Port: DefaultPort,
@@ -42,6 +46,7 @@ func ListenUDP(ctx context.Context, reg *Registry, self protocol.DeviceInfo, fav
 		if err := json.Unmarshal(buf[:n], &info); err != nil {
 			continue
 		}
+		info.Alias = protocol.SanitizeAlias(info.Alias)
 		if info.Alias == "" {
 			continue
 		}
@@ -50,15 +55,20 @@ func ListenUDP(ctx context.Context, reg *Registry, self protocol.DeviceInfo, fav
 			continue
 		}
 
+		remoteIP := remote.IP.String()
+		if !filter.Allow(remoteIP) {
+			continue
+		}
+
 		// When a device actively announces itself, respond so they know about us.
 		if info.Announce && info.Port > 0 {
-			go respondToAnnounce(ctx, remote.IP.String(), info.Port, self)
+			go respondToAnnounce(ctx, remoteIP, info.Port, self)
 		}
 
 		dev := protocol.DiscoveredDevice{
 			DeviceInfo: info,
-			IP:         remote.IP.String(),
-			Favorite:   isFavorite(remote.IP.String(), favorites),
+			IP:         remoteIP,
+			Favorite:   isFavorite(remoteIP, favorites),
 		}
 		if isNew := reg.Upsert(dev); isNew && onDevice != nil {
 			onDevice(dev)

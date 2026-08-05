@@ -51,7 +51,7 @@ On first run, a config file is created at `~/.config/localsend-cli/config.toml`:
 
 **Favorites** are auto-accepted without a prompt and used by the `pick` TUI and the [localsend-cli-ui.yazi](https://github.com/deppess/yazi-plugins) plugin.
 
-**Whitelist** (`enabled = true`) restricts incoming transfers and discovery to the listed IPs only. Whitelist filtering is enforced at the HTTP layer — UDP multicast is always sent to the standard multicast group so official LocalSend apps can discover this device normally.
+**Whitelist** (`enabled = true`) restricts incoming transfers and discovery to the listed IPs only. This applies to inbound UDP announcements as well as every HTTP endpoint (`register`, `prepare-upload`, `upload`, `info`, `cancel`). The one exception is outbound: this device's own UDP multicast *broadcast* of its presence is always sent to the standard multicast group regardless of whitelist mode, so official LocalSend apps can still discover it — whitelist enforcement then happens on our side when they try to register or send.
 
 ## Commands
 

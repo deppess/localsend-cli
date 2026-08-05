@@ -47,7 +47,7 @@ func runPick(_ *cobra.Command, _ []string) error {
 		}
 	}
 
-	go discovery.ListenUDP(ctx, reg, self, cfg.Favorites, onDevice) //nolint:errcheck
+	go discovery.ListenUDP(ctx, reg, self, filter, cfg.Favorites, onDevice) //nolint:errcheck
 	go func() {
 		for {
 			discovery.ScanHTTP(ctx, reg, self, filter, cfg.Favorites, onDevice)

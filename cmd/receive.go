@@ -90,7 +90,7 @@ func runReceive(_ *cobra.Command, _ []string) error {
 	}()
 
 	go discovery.BroadcastUDP(ctx, self)
-	go discovery.ListenUDP(ctx, reg, self, cfg.Favorites, nil) //nolint:errcheck
+	go discovery.ListenUDP(ctx, reg, self, filter, cfg.Favorites, nil) //nolint:errcheck
 	go discovery.ReannounceToKnown(ctx, reg, self, 5*time.Second)
 	go func() {
 		for {

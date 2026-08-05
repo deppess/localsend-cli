@@ -110,6 +110,7 @@ func registerHTTPFiltered(ctx context.Context, reg *Registry, ip string, port in
 	if err := json.Unmarshal(raw, &info); err != nil {
 		return
 	}
+	info.Alias = protocol.SanitizeAlias(info.Alias)
 	if info.Alias == "" || info.Fingerprint == selfFP || reg == nil {
 		return
 	}
@@ -147,6 +148,7 @@ func registerHTTP(ctx context.Context, reg *Registry, ip string, port int, body 
 	if err := json.Unmarshal(raw, &info); err != nil {
 		return
 	}
+	info.Alias = protocol.SanitizeAlias(info.Alias)
 	if info.Alias == "" || reg == nil {
 		return
 	}
@@ -175,6 +177,7 @@ func RegisterHandler(reg *Registry, self protocol.DeviceInfo, filter *whitelist.
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
+		info.Alias = protocol.SanitizeAlias(info.Alias)
 		if info.Alias == "" {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return

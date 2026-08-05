@@ -207,9 +207,10 @@ func uploadFile(ctx context.Context, client *http.Client, ip string, port int, s
 }
 
 func newSendClient(peerIP string, cfg *config.Config, logf func(string)) *http.Client {
-	verifyFn := tlsutil.VerifyFunc(peerIP, cfg.Trusted, func(ip, fp string) {
-		cfg.Trusted[ip] = fp
-		config.Save(cfg) //nolint:errcheck
+	verifyFn := tlsutil.VerifyFunc(peerIP, cfg.LookupTrusted, func(ip, fp string) {
+		if err := cfg.SetTrusted(ip, fp); err != nil && logf != nil {
+			logf(fmt.Sprintf("warning: failed to persist trust for %s: %v", ip, err))
+		}
 		if logf != nil {
 			logf(fmt.Sprintf("trusting new peer %s with fingerprint %s (saved to config)", ip, fp))
 		}

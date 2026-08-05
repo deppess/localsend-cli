@@ -128,7 +128,7 @@ func (m ReceiveModel) View() string {
 		b.WriteString(styleMuted.Render("  waiting for incoming transfer..."))
 	case statePrompted:
 		if m.incoming != nil {
-			b.WriteString(fmt.Sprintf("  incoming from %s\n\n", m.incoming.Alias))
+			b.WriteString(fmt.Sprintf("  incoming from %s (%s)\n\n", m.incoming.Alias, m.incoming.FromIP))
 			b.WriteString("  Accept? [y/n]: ")
 		}
 	case stateReceiving:

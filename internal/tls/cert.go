@@ -55,8 +55,11 @@ func NewServer(addr string, handler http.Handler, cert tls.Certificate) *http.Se
 
 // VerifyFunc returns a tls.VerifyPeerCertificate-compatible function that
 // implements TOFU: on first contact it records the fingerprint, on subsequent
-// contacts it verifies it matches.
-func VerifyFunc(peerIP string, trusted map[string]string, onNew func(ip, fp string)) func([][]byte, [][]*x509.Certificate) error {
+// contacts it verifies it matches. lookup and onNew are the synchronized
+// read/write sides of the trust store — this function never touches the
+// underlying storage directly, so it stays safe under concurrent handshakes
+// to the same peerIP as long as lookup/onNew are themselves synchronized.
+func VerifyFunc(peerIP string, lookup func(ip string) (string, bool), onNew func(ip, fp string)) func([][]byte, [][]*x509.Certificate) error {
 	return func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 		if len(rawCerts) == 0 {
 			return fmt.Errorf("no certificates from peer")
@@ -64,7 +67,7 @@ func VerifyFunc(peerIP string, trusted map[string]string, onNew func(ip, fp stri
 		sum := sha256.Sum256(rawCerts[0])
 		fp := "sha256:" + hex.EncodeToString(sum[:])
 
-		if known, ok := trusted[peerIP]; ok {
+		if known, ok := lookup(peerIP); ok {
 			if known != fp {
 				return fmt.Errorf("fingerprint mismatch for %s: expected %s got %s", peerIP, known, fp)
 			}

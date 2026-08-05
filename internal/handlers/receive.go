@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -34,12 +35,17 @@ func (h *Handler) PrepareUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
+	if !h.allowPrepare(ip) {
+		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		return
+	}
 
 	var req protocol.PrepareUploadRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 64*1024)).Decode(&req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
+	req.Info.Alias = protocol.SanitizeAlias(req.Info.Alias)
 	if req.Info.Alias == "" || len(req.Files) == 0 {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
@@ -154,9 +160,9 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify token.
+	// Verify token (constant-time to avoid a timing side-channel on the comparison).
 	expected, ok := s.tokens[fileID]
-	if !ok || expected != token {
+	if !ok || subtle.ConstantTimeCompare([]byte(expected), []byte(token)) != 1 {
 		http.Error(w, "invalid token", http.StatusForbidden)
 		return
 	}
